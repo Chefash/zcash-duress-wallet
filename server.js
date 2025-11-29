@@ -1,6 +1,4 @@
 const express = require("express");
-const fs = require("fs");
-const path = require("path");
 const cors = require("cors");
 const axios = require("axios");
 require("dotenv").config();
@@ -8,237 +6,234 @@ require("dotenv").config();
 const app = express();
 const PORT = process.env.PORT || 3000;
 
+// Debug: Log all requests
+app.use((req, res, next) => {
+  console.log(`${new Date().toISOString()} - ${req.method} ${req.path}`);
+  next();
+});
+
 app.use(cors());
 app.use(express.json());
 app.use(express.static("public"));
 
-// In-memory storage (use DB in production)
-let users = {};
-let duressLog = [];
+console.log("🔍 Starting server...");
+console.log("📁 Current directory:", __dirname);
+console.log("🌐 Port:", PORT);
+console.log("🔔 Discord webhook configured:", !!process.env.DISCORD_WEBHOOK);
 
-// ============ SETUP ENDPOINT ============
-app.post("/api/setup", (req, res) => {
-  const { username, password, duressPin, emergencyContacts, realWalletBalance, decoyWalletBalance } = req.body;
+// Configuration
+const NORMAL_PASSWORD = "password123";
+const DURESS_PIN = "911";
+const DISCORD_WEBHOOK = process.env.DISCORD_WEBHOOK;
 
-  if (!username || !password || !duressPin) {
-    return res.status(400).json({ error: "Missing required fields" });
+// Mock wallet data
+const realWallet = {
+  address: "zs1w8zz8zz8zz8zz8zz8zz8zz8zz8zz8zz8zz8zz8zz8zz8zz8zz8zz8zz8zz8",
+  balance: 25.75,
+  transactions: [
+    { date: "2024-01-15", amount: 10.5, type: "received", from: "zs1abc..." },
+    { date: "2024-01-10", amount: -2.25, type: "sent", to: "zs1def..." },
+    { date: "2024-01-05", amount: 15.0, type: "received", from: "zs1ghi..." },
+    { date: "2024-01-01", amount: 2.5, type: "received", from: "zs1jkl..." },
+  ],
+};
+
+const decoyWallet = {
+  address: "zs1d3c0yd3c0yd3c0yd3c0yd3c0yd3c0yd3c0yd3c0yd3c0yd3c0yd3c0y",
+  balance: 0.5,
+  transactions: [
+    { date: "2023-12-20", amount: 0.5, type: "received", from: "zs1xyz..." },
+    { date: "2023-12-15", amount: -0.1, type: "sent", to: "zs1uvw..." },
+  ],
+};
+
+// Track duress attempts per session
+const duressAttempts = {};
+
+// Track statistics
+let stats = {
+  totalLogins: 0,
+  normalLogins: 0,
+  duressAttempts: 0,
+  alertsSent: 0,
+  recentActivity: []
+};
+
+function logActivity(type, level = null) {
+  stats.totalLogins++;
+  if (type === 'normal') {
+    stats.normalLogins++;
+  } else if (type === 'duress') {
+    stats.duressAttempts++;
   }
-
-  users[username] = {
-    password,
-    duressPin,
-    emergencyContacts: emergencyContacts || ["emergency@example.com"],
-    realWalletBalance: realWalletBalance || 10.5,
-    decoyWalletBalance: decoyWalletBalance || 0.25,
-    decoyTransactions: generateFakeTransactions(5),
-    realTransactions: generateRealTransactions(8),
-    createdAt: new Date(),
-    duressTriggered: false,
-    duressTriggerCount: 0,
-    lastLoginTime: null,
-  };
-
-  res.json({ 
-    success: true, 
-    message: "Wallet setup complete",
-    walletId: username 
+  
+  stats.recentActivity.unshift({
+    type,
+    level,
+    timestamp: new Date().toISOString()
   });
-});
+  
+  // Keep only last 50 activities
+  if (stats.recentActivity.length > 50) {
+    stats.recentActivity = stats.recentActivity.slice(0, 50);
+  }
+  
+  console.log(`📊 Activity logged: ${type} (level: ${level})`);
+}
 
-// ============ LOGIN ENDPOINT ============
-app.post("/api/login", (req, res) => {
-  const { username, password, passwordAttempt } = req.body;
-
-  if (!users[username]) {
-    return res.status(401).json({ error: "User not found" });
+// Discord alert function
+async function sendDiscordAlert(attemptCount, alertLevel) {
+  if (!DISCORD_WEBHOOK) {
+    console.log("⚠️ Discord webhook not configured - skipping alert");
+    return;
   }
 
-  const user = users[username];
-
-  // Check if this is a duress trigger (wrong password = duress attempt)
-  const isDuress = passwordAttempt !== user.password;
-
-  if (isDuress && passwordAttempt === user.duressPin) {
-    // Duress code entered
-    user.duressTriggerCount += 1;
-    user.lastLoginTime = new Date();
-
-    const triggerLevel = user.duressTriggerCount;
-    let responseType = "yellow"; // Level 1
-    let message = "Duress mode activated - Level 1 (Silent)";
-
-    if (triggerLevel === 2) {
-      responseType = "orange"; // Level 2
-      message = "Duress mode activated - Level 2 (Soft Alert - 2 hour delay)";
-      // Queue alert for 2 hours from now
-      setTimeout(() => sendAlert(user, "soft"), 2 * 60 * 60 * 1000);
-    } else if (triggerLevel >= 3) {
-      responseType = "red"; // Level 3+
-      message = "Duress mode activated - Level 3 (IMMEDIATE ALERT)";
-      // Send alert immediately
-      sendAlert(user, "immediate");
-    }
-
-    // Log the duress trigger
-    duressLog.push({
-      username,
-      timestamp: new Date(),
-      triggerLevel,
-      ip: req.ip,
-      userAgent: req.get("user-agent"),
-    });
-
-    // Return decoy wallet
-    return res.json({
-      success: true,
-      mode: "duress",
-      responseType,
-      message,
-      triggerLevel,
-      wallet: {
-        balance: user.decoyWalletBalance,
-        address: "t1...decoy" + Math.random().toString(36).substring(7),
-        transactions: user.decoyTransactions,
-      },
-      alert: {
-        sent: triggerLevel >= 3,
-        level: triggerLevel,
-        message: `Duress trigger level ${triggerLevel} - ${responseType.toUpperCase()}`,
-      },
-    });
-  }
-
-  // Normal login
-  if (passwordAttempt === user.password) {
-    user.lastLoginTime = new Date();
-    user.duressTriggerCount = 0; // Reset counter on successful login
-
-    return res.json({
-      success: true,
-      mode: "normal",
-      message: "Login successful",
-      wallet: {
-        balance: user.realWalletBalance,
-        address: "t1...real" + Math.random().toString(36).substring(7),
-        transactions: user.realTransactions,
-        shielded: true,
-      },
-    });
-  }
-
-  // Wrong password and not duress pin
-  return res.status(401).json({ error: "Invalid credentials" });
-});
-
-// ============ ALERT SYSTEM ============
-function sendAlert(user, severity) {
-  const webhookUrl = process.env.DISCORD_WEBHOOK;
-  if (!webhookUrl) return;
-
-  const embed = {
-    title: `🚨 Duress Alert - ${severity.toUpperCase()}`,
-    description: `User ${user.username || "Unknown"} has triggered duress protocol`,
-    color: severity === "immediate" ? 16711680 : 16776960, // Red or Orange
-    fields: [
+  const message = {
+    embeds: [
       {
-        name: "Trigger Time",
-        value: new Date().toISOString(),
-        inline: true,
-      },
-      {
-        name: "Decoy Balance Exposed",
-        value: `${user.decoyWalletBalance} ZEC`,
-        inline: true,
-      },
-      {
-        name: "Real Balance Status",
-        value: "🔒 Shielded - Secure",
-        inline: true,
-      },
-      {
-        name: "Action Required",
-        value: severity === "immediate" ? "⚡ IMMEDIATE RESPONSE NEEDED" : "⏰ Response needed within 2 hours",
-        inline: false,
+        title: "🚨 DURESS ALERT - IMMEDIATE ACTION REQUIRED",
+        description: `Emergency duress code entered ${attemptCount} times`,
+        color: 16711680,
+        fields: [
+          {
+            name: "Alert Level",
+            value: alertLevel.toUpperCase(),
+            inline: true,
+          },
+          {
+            name: "Attempt Count",
+            value: attemptCount.toString(),
+            inline: true,
+          },
+          {
+            name: "Timestamp",
+            value: new Date().toISOString(),
+            inline: false,
+          },
+        ],
       },
     ],
-    timestamp: new Date().toISOString(),
   };
 
-  axios
-    .post(webhookUrl, { embeds: [embed] })
-    .catch((err) => console.log("Alert send failed:", err.message));
-
-  // Also log to console for demo
-  console.log(`[DURESS ALERT] ${severity.toUpperCase()} - ${user.username}`);
+  try {
+    await axios.post(DISCORD_WEBHOOK, message);
+    console.log("✅ Discord alert sent successfully");
+  } catch (error) {
+    console.error("❌ Failed to send Discord alert:", error.message);
+  }
 }
 
-// ============ DEMO DATA ============
-function generateFakeTransactions(count) {
-  const txs = [];
-  for (let i = 0; i < count; i++) {
-    txs.push({
-      hash: "t1...fake" + Math.random().toString(36).substring(7),
-      amount: (Math.random() * 0.2).toFixed(4),
-      timestamp: new Date(Date.now() - Math.random() * 30 * 24 * 60 * 60 * 1000).toISOString(),
-      status: "confirmed",
-      to: "t1...recipient" + i,
+// Root endpoint
+app.get("/", (req, res) => {
+  console.log("📍 Root endpoint hit");
+  res.sendFile(__dirname + "/public/index.html");
+});
+
+// Login endpoint
+app.post("/api/login", (req, res) => {
+  console.log("🔐 Login attempt received");
+  console.log("📦 Request body:", req.body);
+  
+  const { password } = req.body;
+  const sessionId = req.headers["x-session-id"] || "default";
+
+  if (!password) {
+    console.log("❌ No password provided");
+    return res.status(400).json({
+      success: false,
+      message: "Password required"
     });
   }
-  return txs;
-}
 
-function generateRealTransactions(count) {
-  const txs = [];
-  for (let i = 0; i < count; i++) {
-    txs.push({
-      hash: "t1...real" + Math.random().toString(36).substring(7),
-      amount: (Math.random() * 2 + 0.5).toFixed(4),
-      timestamp: new Date(Date.now() - Math.random() * 60 * 24 * 60 * 60 * 1000).toISOString(),
-      status: "confirmed",
-      to: "t1...shielded" + i,
-      shielded: true,
+  // Initialize duress counter for this session
+  if (!duressAttempts[sessionId]) {
+    duressAttempts[sessionId] = 0;
+  }
+
+  // Normal password
+  if (password === NORMAL_PASSWORD) {
+    console.log("✅ Normal login successful");
+    duressAttempts[sessionId] = 0;
+    logActivity('normal');
+    return res.json({
+      success: true,
+      wallet: realWallet,
+      isDuress: false,
+      message: "✅ Wallet unlocked successfully",
     });
   }
-  return txs;
-}
 
-// ============ STATS ENDPOINT ============
-app.get("/api/stats", (req, res) => {
-  res.json({
-    totalUsers: Object.keys(users).length,
-    duressTriggers: duressLog.length,
-    lastTrigger: duressLog[duressLog.length - 1] || null,
-    recentActivity: duressLog.slice(-5),
+  // Duress PIN
+  if (password === DURESS_PIN) {
+    duressAttempts[sessionId]++;
+    const attemptCount = duressAttempts[sessionId];
+    console.log(`🚨 Duress login - Attempt #${attemptCount}`);
+    
+    let alertLevel = "yellow";
+    let message = "🟡 Level 1: Decoy wallet shown (silent)";
+
+    if (attemptCount === 2) {
+      alertLevel = "orange";
+      message = "🟠 Level 2: Alert queued (2 hour delay)";
+    } else if (attemptCount >= 3) {
+      alertLevel = "red";
+      message = "🔴 Level 3: IMMEDIATE ALERT SENT";
+      stats.alertsSent++;
+      sendDiscordAlert(attemptCount, alertLevel);
+    }
+
+    logActivity('duress', attemptCount);
+
+    return res.json({
+      success: true,
+      wallet: decoyWallet,
+      isDuress: true,
+      attemptCount,
+      alertLevel,
+      message,
+    });
+  }
+
+  // Invalid credentials
+  console.log("❌ Invalid credentials");
+  return res.status(401).json({
+    success: false,
+    message: "❌ Invalid credentials",
   });
 });
 
-// ============ DEMO DATA ENDPOINT ============
-app.post("/api/demo-setup", (req, res) => {
-  users["demo"] = {
-    username: "demo",
-    password: "password123",
-    duressPin: "911",
-    emergencyContacts: ["wife@example.com", "lawyer@example.com"],
-    realWalletBalance: 25.75,
-    decoyWalletBalance: 0.5,
-    decoyTransactions: generateFakeTransactions(5),
-    realTransactions: generateRealTransactions(8),
-    createdAt: new Date(),
-    duressTriggered: false,
-    duressTriggerCount: 0,
-    lastLoginTime: null,
-  };
-
-  res.json({ success: true, message: "Demo account created", username: "demo", password: "password123", duressPin: "911" });
+// Stats endpoint
+app.get("/api/stats", (req, res) => {
+  console.log("📊 Stats requested");
+  res.json(stats);
 });
 
-// ============ ERROR HANDLER ============
+// Health check
+app.get("/api/health", (req, res) => {
+  console.log("❤️ Health check");
+  res.json({ 
+    status: "ok", 
+    timestamp: new Date().toISOString(),
+    port: PORT,
+    discord: !!DISCORD_WEBHOOK
+  });
+});
+
+// 404 handler
+app.use((req, res) => {
+  console.log("❌ 404 Not Found:", req.path);
+  res.status(404).json({ error: "Not found", path: req.path });
+});
+
+// Error handler
 app.use((err, req, res, next) => {
-  console.error(err);
-  res.status(500).json({ error: "Internal server error" });
+  console.error("💥 Server error:", err);
+  res.status(500).json({ error: "Internal server error", message: err.message });
 });
 
 app.listen(PORT, () => {
-  console.log(`🔒 Zcash Duress Wallet running on http://localhost:${PORT}`);
-  console.log(`📧 Discord alerts: ${process.env.DISCORD_WEBHOOK ? "✅ Configured" : "❌ Not configured"}`);
+  console.log(`🔒 Zcash Duress Wallet running on port ${PORT}`);
+  console.log(`🌐 Visit: http://localhost:${PORT}`);
+  console.log(`📊 Stats: http://localhost:${PORT}/api/stats`);
+  console.log(`❤️ Health: http://localhost:${PORT}/api/health`);
 });
