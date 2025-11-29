@@ -1,0 +1,656 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Zcash Duress Wallet</title>
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+      color: #e0e0e0;
+      min-height: 100vh;
+      padding: 20px;
+    }
+
+    .container {
+      max-width: 500px;
+      margin: 0 auto;
+    }
+
+    header {
+      text-align: center;
+      margin-bottom: 40px;
+      margin-top: 20px;
+    }
+
+    header h1 {
+      font-size: 28px;
+      margin-bottom: 8px;
+      background: linear-gradient(135deg, #ff6b6b, #4ecdc4);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+    }
+
+    header p {
+      font-size: 12px;
+      color: #888;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+    }
+
+    .tabs {
+      display: flex;
+      gap: 10px;
+      margin-bottom: 30px;
+      border-bottom: 1px solid #333;
+    }
+
+    .tab-btn {
+      flex: 1;
+      padding: 12px;
+      background: transparent;
+      border: none;
+      color: #888;
+      cursor: pointer;
+      font-size: 12px;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      border-bottom: 2px solid transparent;
+      transition: all 0.3s;
+    }
+
+    .tab-btn.active {
+      color: #4ecdc4;
+      border-bottom-color: #4ecdc4;
+    }
+
+    .tab-content {
+      display: none;
+    }
+
+    .tab-content.active {
+      display: block;
+      animation: fadeIn 0.3s;
+    }
+
+    @keyframes fadeIn {
+      from { opacity: 0; }
+      to { opacity: 1; }
+    }
+
+    .form-group {
+      margin-bottom: 20px;
+    }
+
+    label {
+      display: block;
+      font-size: 12px;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      color: #888;
+      margin-bottom: 8px;
+    }
+
+    input, textarea {
+      width: 100%;
+      padding: 12px;
+      background: #0f1419;
+      border: 1px solid #333;
+      border-radius: 4px;
+      color: #e0e0e0;
+      font-size: 14px;
+    }
+
+    input:focus {
+      outline: none;
+      border-color: #4ecdc4;
+      box-shadow: 0 0 0 2px rgba(78, 205, 196, 0.1);
+    }
+
+    button {
+      width: 100%;
+      padding: 14px;
+      background: linear-gradient(135deg, #ff6b6b, #4ecdc4);
+      border: none;
+      border-radius: 4px;
+      color: white;
+      font-weight: 600;
+      cursor: pointer;
+      font-size: 14px;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      transition: all 0.3s;
+    }
+
+    button:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 10px 20px rgba(78, 205, 196, 0.2);
+    }
+
+    button:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+    }
+
+    .wallet-display {
+      background: #0f1419;
+      border: 1px solid #333;
+      border-radius: 8px;
+      padding: 20px;
+      margin-bottom: 20px;
+    }
+
+    .balance {
+      font-size: 32px;
+      font-weight: 700;
+      margin-bottom: 10px;
+      letter-spacing: -1px;
+    }
+
+    .balance.real {
+      color: #4ecdc4;
+    }
+
+    .balance.decoy {
+      color: #ff6b6b;
+    }
+
+    .address {
+      font-size: 11px;
+      color: #666;
+      word-break: break-all;
+      font-family: monospace;
+      margin-bottom: 15px;
+    }
+
+    .badge {
+      display: inline-block;
+      padding: 4px 12px;
+      border-radius: 20px;
+      font-size: 10px;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      margin-bottom: 15px;
+    }
+
+    .badge.shielded {
+      background: rgba(78, 205, 196, 0.2);
+      color: #4ecdc4;
+    }
+
+    .badge.decoy {
+      background: rgba(255, 107, 107, 0.2);
+      color: #ff6b6b;
+    }
+
+    .transactions {
+      margin-top: 20px;
+      border-top: 1px solid #333;
+      padding-top: 20px;
+    }
+
+    .transaction {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 12px 0;
+      border-bottom: 1px solid #1a1a2e;
+      font-size: 12px;
+    }
+
+    .tx-hash {
+      font-family: monospace;
+      color: #888;
+    }
+
+    .tx-amount {
+      font-weight: 600;
+    }
+
+    .alert-box {
+      background: rgba(255, 107, 107, 0.1);
+      border-left: 3px solid #ff6b6b;
+      padding: 15px;
+      border-radius: 4px;
+      margin-bottom: 20px;
+      font-size: 13px;
+    }
+
+    .alert-box.yellow {
+      border-left-color: #ffd93d;
+      background: rgba(255, 217, 61, 0.1);
+    }
+
+    .alert-box.orange {
+      border-left-color: #ff9f43;
+      background: rgba(255, 159, 67, 0.1);
+    }
+
+    .alert-box.red {
+      border-left-color: #ff6b6b;
+      background: rgba(255, 107, 107, 0.1);
+    }
+
+    .timeline {
+      margin-top: 20px;
+    }
+
+    .timeline-item {
+      display: flex;
+      gap: 15px;
+      margin-bottom: 25px;
+      padding-bottom: 25px;
+      border-bottom: 1px solid #333;
+    }
+
+    .timeline-item:last-child {
+      border-bottom: none;
+    }
+
+    .timeline-dot {
+      width: 12px;
+      height: 12px;
+      border-radius: 50%;
+      margin-top: 4px;
+      flex-shrink: 0;
+    }
+
+    .timeline-dot.yellow {
+      background: #ffd93d;
+    }
+
+    .timeline-dot.orange {
+      background: #ff9f43;
+    }
+
+    .timeline-dot.red {
+      background: #ff6b6b;
+    }
+
+    .timeline-content h4 {
+      font-size: 13px;
+      margin-bottom: 4px;
+      color: #e0e0e0;
+    }
+
+    .timeline-content p {
+      font-size: 12px;
+      color: #888;
+      line-height: 1.4;
+    }
+
+    .stat-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 15px;
+      margin-bottom: 20px;
+    }
+
+    .stat-box {
+      background: #0f1419;
+      border: 1px solid #333;
+      padding: 15px;
+      border-radius: 4px;
+      text-align: center;
+    }
+
+    .stat-box .number {
+      font-size: 28px;
+      font-weight: 700;
+      color: #4ecdc4;
+      margin-bottom: 5px;
+    }
+
+    .stat-box .label {
+      font-size: 11px;
+      color: #888;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+    }
+
+    .success {
+      color: #4ecdc4;
+      font-size: 12px;
+      margin-top: 10px;
+    }
+
+    .error {
+      color: #ff6b6b;
+      font-size: 12px;
+      margin-top: 10px;
+    }
+
+    .contacts-list {
+      background: #0f1419;
+      border: 1px solid #333;
+      border-radius: 4px;
+      padding: 15px;
+      margin-bottom: 20px;
+    }
+
+    .contact-item {
+      padding: 10px 0;
+      border-bottom: 1px solid #1a1a2e;
+      font-size: 13px;
+    }
+
+    .contact-item:last-child {
+      border-bottom: none;
+    }
+
+    .contact-email {
+      color: #4ecdc4;
+      font-family: monospace;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <header>
+      <h1>🔒 ZCASH DURESS WALLET</h1>
+      <p>Privacy Under Coercion</p>
+    </header>
+
+    <div class="tabs">
+      <button class="tab-btn active" onclick="switchTab('setup')">Setup</button>
+      <button class="tab-btn" onclick="switchTab('login')">Login</button>
+      <button class="tab-btn" onclick="switchTab('timeline')">Timeline</button>
+      <button class="tab-btn" onclick="switchTab('stats')">Stats</button>
+    </div>
+
+    <!-- SETUP TAB -->
+    <div id="setup" class="tab-content active">
+      <h3 style="margin-bottom: 20px; font-size: 16px;">Wallet Setup</h3>
+      
+      <div class="form-group">
+        <label>Username</label>
+        <input type="text" id="setupUsername" placeholder="your_name" value="demo">
+      </div>
+
+      <div class="form-group">
+        <label>Strong Password</label>
+        <input type="password" id="setupPassword" placeholder="••••••••" value="password123">
+      </div>
+
+      <div class="form-group">
+        <label>Duress PIN (secret distress code)</label>
+        <input type="password" id="setupDuressPin" placeholder="••••" value="911">
+        <p style="font-size: 11px; color: #666; margin-top: 6px;">Enter this instead of password when in danger</p>
+      </div>
+
+      <div class="form-group">
+        <label>Real Wallet Balance (ZEC)</label>
+        <input type="number" id="realBalance" placeholder="25.75" value="25.75" step="0.01">
+      </div>
+
+      <div class="form-group">
+        <label>Decoy Wallet Balance (ZEC)</label>
+        <input type="number" id="decoyBalance" placeholder="0.5" value="0.5" step="0.01">
+        <p style="font-size: 11px; color: #666; margin-top: 6px;">Small amount to give up if coerced</p>
+      </div>
+
+      <div class="form-group">
+        <label>Emergency Contacts (one per line)</label>
+        <textarea id="emergencyContacts" placeholder="wife@example.com&#10;lawyer@example.com" rows="4">wife@example.com
+lawyer@example.com
+security_team@example.com</textarea>
+      </div>
+
+      <button onclick="setupWallet()">Create Wallet</button>
+      <div id="setupMsg" style="margin-top: 15px;"></div>
+    </div>
+
+    <!-- LOGIN TAB -->
+    <div id="login" class="tab-content">
+      <h3 style="margin-bottom: 20px; font-size: 16px;">Wallet Access</h3>
+
+      <div class="form-group">
+        <label>Username</label>
+        <input type="text" id="loginUsername" placeholder="your_name" value="demo">
+      </div>
+
+      <div class="form-group">
+        <label>Password</label>
+        <input type="password" id="loginPassword" placeholder="••••••••" value="">
+      </div>
+
+      <button onclick="login()">Login to Wallet</button>
+
+      <div id="loginResult" style="margin-top: 20px;"></div>
+
+      <div style="margin-top: 40px; padding-top: 40px; border-top: 1px solid #333;">
+        <h4 style="font-size: 12px; color: #888; margin-bottom: 20px; text-transform: uppercase; letter-spacing: 1px;">📱 Demo Instructions</h4>
+        <p style="font-size: 12px; line-height: 1.6; color: #888;">
+          <strong>Normal Login:</strong> Use password <code style="background: #0f1419; padding: 2px 6px; border-radius: 2px;">password123</code><br><br>
+          <strong>Level 1 Duress:</strong> Enter duress PIN <code style="background: #0f1419; padding: 2px 6px; border-radius: 2px;">911</code> once → shows decoy wallet silently<br><br>
+          <strong>Level 2 Duress:</strong> Enter PIN again → contact gets alert in 2 hours<br><br>
+          <strong>Level 3 Duress:</strong> Enter PIN third time → IMMEDIATE alert to all contacts
+        </p>
+      </div>
+    </div>
+
+    <!-- TIMELINE TAB -->
+    <div id="timeline" class="tab-content">
+      <h3 style="margin-bottom: 20px; font-size: 16px;">Threat Response Timeline</h3>
+      
+      <div class="timeline">
+        <div class="timeline-item">
+          <div class="timeline-dot yellow"></div>
+          <div class="timeline-content">
+            <h4>🟡 Level 1: Silent Trigger</h4>
+            <p>First duress code entry detected. Decoy wallet displayed. No external alerts. Attacker sees normal login.</p>
+          </div>
+        </div>
+
+        <div class="timeline-item">
+          <div class="timeline-dot orange"></div>
+          <div class="timeline-content">
+            <h4>🟠 Level 2: Soft Alert (2 Hour Delay)</h4>
+            <p>Second consecutive duress entry. Emergency contacts receive encrypted alert in 2 hours. Attacker likely gone by then.</p>
+          </div>
+        </div>
+
+        <div class="timeline-item">
+          <div class="timeline-dot red"></div>
+          <div class="timeline-content">
+            <h4>🔴 Level 3: Immediate Response</h4>
+            <p>Third duress entry. ALL emergency contacts receive immediate Discord alert. Real funds stay shielded on Zcash.</p>
+          </div>
+        </div>
+      </div>
+
+      <div class="alert-box orange" style="margin-top: 30px;">
+        <strong>How This Wins:</strong> Attacker forces you to log in. You enter duress code. They see a small balance (decoy). Real funds are genuinely untouched and shielded. Even if they force you multiple times, graduated alerts ensure help arrives without exposing the system.
+      </div>
+    </div>
+
+    <!-- STATS TAB -->
+    <div id="stats" class="tab-content">
+      <h3 style="margin-bottom: 20px; font-size: 16px;">System Status</h3>
+
+      <div class="stat-grid">
+        <div class="stat-box">
+          <div class="number" id="userCount">0</div>
+          <div class="label">Wallets Created</div>
+        </div>
+        <div class="stat-box">
+          <div class="number" id="triggerCount">0</div>
+          <div class="label">Duress Events</div>
+        </div>
+      </div>
+
+      <button onclick="loadStats()" style="margin-bottom: 15px;">Refresh Stats</button>
+      <button onclick="setupDemo()" style="margin-bottom: 20px; background: linear-gradient(135deg, #667eea, #764ba2);">Load Demo Data</button>
+
+      <div id="statsResult" style="font-size: 12px; color: #888;"></div>
+    </div>
+  </div>
+
+  <script>
+    const API = "http://localhost:3000/api";
+
+    function switchTab(tab) {
+      document.querySelectorAll(".tab-content").forEach(el => el.classList.remove("active"));
+      document.querySelectorAll(".tab-btn").forEach(el => el.classList.remove("active"));
+      
+      document.getElementById(tab).classList.add("active");
+      event.target.classList.add("active");
+
+      if (tab === "stats") loadStats();
+    }
+
+    async function setupWallet() {
+      const username = document.getElementById("setupUsername").value;
+      const password = document.getElementById("setupPassword").value;
+      const duressPin = document.getElementById("setupDuressPin").value;
+      const realBalance = parseFloat(document.getElementById("realBalance").value);
+      const decoyBalance = parseFloat(document.getElementById("decoyBalance").value);
+      const contacts = document.getElementById("emergencyContacts").value.split("\n").filter(c => c.trim());
+
+      if (!username || !password || !duressPin) {
+        showMsg("setupMsg", "❌ All fields required", "error");
+        return;
+      }
+
+      try {
+        const res = await fetch(`${API}/setup`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            username,
+            password,
+            duressPin,
+            emergencyContacts: contacts,
+            realWalletBalance: realBalance,
+            decoyWalletBalance: decoyBalance,
+          }),
+        });
+
+        const data = await res.json();
+        if (data.success) {
+          showMsg("setupMsg", `✅ Wallet created! Username: <strong>${username}</strong>. Go to Login tab.`, "success");
+        } else {
+          showMsg("setupMsg", `❌ ${data.error}`, "error");
+        }
+      } catch (err) {
+        showMsg("setupMsg", `❌ Error: ${err.message}`, "error");
+      }
+    }
+
+    async function login() {
+      const username = document.getElementById("loginUsername").value;
+      const password = document.getElementById("loginPassword").value;
+
+      if (!username || !password) {
+        showMsg("loginResult", "❌ Username and password required", "error");
+        return;
+      }
+
+      try {
+        const res = await fetch(`${API}/login`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            username,
+            passwordAttempt: password,
+          }),
+        });
+
+        const data = await res.json();
+
+        if (data.success) {
+          const wallet = data.wallet;
+          const html = `
+            <div class="wallet-display">
+              <div class="badge ${data.mode === "normal" ? "shielded" : "decoy"}">
+                ${data.mode === "normal" ? "🔐 Real Wallet" : "⚠️ Duress Mode"}
+              </div>
+              <div class="balance ${data.mode === "normal" ? "real" : "decoy"}">
+                ${wallet.balance} ZEC
+              </div>
+              <div class="address">Address: ${wallet.address}</div>
+              ${data.mode === "normal" ? '<span style="color: #4ecdc4; font-size: 11px;">✅ Shielded on Zcash</span>' : ''}
+              ${data.alert && data.alert.sent ? `
+                <div class="alert-box red" style="margin-top: 15px;">
+                  <strong>🚨 ${data.alert.message}</strong><br>
+                  Emergency contacts have been alerted via Discord
+                </div>
+              ` : ''}
+              ${data.responseType ? `
+                <div class="alert-box ${data.responseType}" style="margin-top: 15px;">
+                  <strong>${data.message}</strong><br>
+                  Trigger Level: ${data.triggerLevel}
+                </div>
+              ` : ''}
+              <div class="transactions">
+                <h4 style="font-size: 12px; margin-bottom: 12px;">Recent Transactions</h4>
+                ${wallet.transactions.map(tx => `
+                  <div class="transaction">
+                    <div>
+                      <div class="tx-hash">${tx.hash}</div>
+                      <div style="color: #888; font-size: 11px;">${new Date(tx.timestamp).toLocaleDateString()}</div>
+                    </div>
+                    <div class="tx-amount">${tx.amount} ZEC</div>
+                  </div>
+                `).join("")}
+              </div>
+            </div>
+          `;
+          document.getElementById("loginResult").innerHTML = html;
+        } else {
+          showMsg("loginResult", `❌ ${data.error}`, "error");
+        }
+      } catch (err) {
+        showMsg("loginResult", `❌ Error: ${err.message}`, "error");
+      }
+    }
+
+    async function loadStats() {
+      try {
+        const res = await fetch(`${API}/stats`);
+        const data = await res.json();
+        document.getElementById("userCount").textContent = data.totalUsers;
+        document.getElementById("triggerCount").textContent = data.duressTriggers;
+
+        if (data.lastTrigger) {
+          document.getElementById("statsResult").innerHTML = `
+            <p><strong>Last Duress Event:</strong></p>
+            <p>User: ${data.lastTrigger.username}</p>
+            <p>Time: ${new Date(data.lastTrigger.timestamp).toLocaleString()}</p>
+            <p>Level: ${data.lastTrigger.triggerLevel}</p>
+          `;
+        }
+      } catch (err) {
+        console.log("Stats load failed:", err.message);
+      }
+    }
+
+    async function setupDemo() {
+      try {
+        const res = await fetch(`${API}/demo-setup`, { method: "POST" });
+        const data = await res.json();
+        showMsg("statsResult", "✅ Demo account loaded. Go to Login and try:\n• Password: password123\n• Duress PIN: 911", "success");
+        loadStats();
+      } catch (err) {
+        showMsg("statsResult", `❌ Error: ${err.message}`, "error");
+      }
+    }
+
+    function showMsg(elementId, msg, type) {
+      const el = document.getElementById(elementId);
+      el.innerHTML = `<div class="${type}">${msg}</div>`;
+    }
+
+    // Load stats on first load
+    loadStats();
+  </script>
+</body>
+</html>
